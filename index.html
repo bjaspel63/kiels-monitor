@@ -43,7 +43,13 @@
       display:flex; flex-direction:column; gap:2px;
     }
     .title h1{ margin:0; font-size:18px; letter-spacing:.2px; }
-    .title .subline{ color:var(--muted); font-size:13px; }
+    .title .subline{
+      color:var(--muted);
+      font-size:28px;
+      font-weight:950;
+      letter-spacing:.5px;
+      line-height:1.1;
+    }
 
     .pill{
       font-size:12px; padding:8px 10px; border-radius:999px;
@@ -158,14 +164,7 @@
       .quickGrid{ grid-template-columns: repeat(4, 1fr); }
     }
 
-    .title .subline{
-      color:var(--muted);
-      font-size:28px;     /* bigger */
-      font-weight:950;    /* bold */
-      letter-spacing:.5px;
-      line-height:1.1;
-    }
-        .quickBtn{
+    .quickBtn{
       padding: 16px 14px;
       border-radius: 18px;
       background: #f2f4ff;
@@ -196,7 +195,6 @@
 
     .hr{ height:1px; background:var(--line); margin: 12px 0; }
 
-    /* History list */
     .item{
       border:1px solid var(--line);
       background:#fbfbff;
@@ -212,7 +210,6 @@
     .time{ color:var(--muted); font-size: 13px; }
     .note{ margin-top:8px; white-space: pre-wrap; }
 
-    /* Alarm overlay */
     .overlay{
       position: fixed; inset: 0;
       display:none; align-items:center; justify-content:center;
@@ -512,7 +509,6 @@
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
-
   tabBtns.forEach(b => b.addEventListener("click", () => switchTab(b.dataset.tab)));
 
   // ===== DOM =====
@@ -613,6 +609,7 @@
   let alarmActive = false;
   let activeNodes = [];
   let soundTimer = null;
+  let audioUnlocked = false;
 
   // Background music (HTMLAudio)
   let bgAudio = new Audio();
@@ -620,6 +617,7 @@
 
   // ===== Helpers =====
   const pad = (n) => String(n).padStart(2, "0");
+
   const fmtHMS = (ms) => {
     const total = Math.max(0, Math.floor(ms / 1000));
     const h = Math.floor(total / 3600);
@@ -629,13 +627,17 @@
   };
 
   const escapeHtml = (str) =>
-    str.replaceAll("&", "&amp;")
-       .replaceAll("<", "&lt;")
-       .replaceAll(">", "&gt;")
-       .replaceAll('"', "&quot;")
-       .replaceAll("'", "&#039;");
+    String(str)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
 
-  const loadJSON = (k, fallback) => { try { return JSON.parse(localStorage.getItem(k) || fallback); } catch { return JSON.parse(fallback); } };
+  const loadJSON = (k, fallback) => {
+    try { return JSON.parse(localStorage.getItem(k) || fallback); }
+    catch { return JSON.parse(fallback); }
+  };
   const saveJSON = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
   const toLocalDateKey = (ms) => {
@@ -646,13 +648,13 @@
   const formatWhen = (ms) => ms ? new Date(ms).toLocaleString() : "—";
   const formatShort = (ms) => ms ? new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute:"2-digit" }) : "—";
 
-function updateClock(){
-  clockTextEl.textContent = new Date().toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit"
-  });
-}
+  function updateClock(){
+    clockTextEl.textContent = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+  }
 
   function setUI(){
     btnStart.disabled = running;
@@ -716,35 +718,57 @@ function updateClock(){
   function tryNotify(title, body){
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
-    try { new Notification(title, { body, silent:false }); } catch {}
+    try { new Notification(title, { body, silent: false }); } catch {}
   }
 
   // ===== WebAudio alarm sound =====
   async function ensureAudio(){
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) throw new Error("WebAudio not supported");
+      audioCtx = new Ctx();
+    }
     if (audioCtx.state === "suspended") await audioCtx.resume();
+    return audioCtx;
   }
 
   async function unlockAudio(){
     try{
       await ensureAudio();
+
+      // tiny silent-ish ping to unlock audio on mobile
       const osc = audioCtx.createOscillator();
       const g = audioCtx.createGain();
+
       g.gain.value = 0.0001;
       osc.frequency.value = 440;
-      osc.connect(g); g.connect(audioCtx.destination);
-      osc.start(); osc.stop(audioCtx.currentTime + 0.05);
-      osc.onended = () => { try{osc.disconnect()}catch{} try{g.disconnect()}catch{} };
+      osc.connect(g);
+      g.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.05);
+
+      osc.onended = () => {
+        try { osc.disconnect(); } catch {}
+        try { g.disconnect(); } catch {}
+      };
+
+      audioUnlocked = true;
       return true;
-    }catch{ return false; }
+    } catch (e) {
+      console.warn("unlockAudio failed:", e);
+      audioUnlocked = false;
+      return false;
+    }
   }
 
   function stopAlarmNodes(){
     if (soundTimer) clearInterval(soundTimer);
     soundTimer = null;
+
     for (const n of activeNodes){
-      try{ n.stop?.(0); }catch{}
-      try{ n.disconnect?.(); }catch{}
+      try { n.stop?.(0); } catch {}
+      try { n.disconnect?.(); } catch {}
     }
     activeNodes = [];
   }
@@ -765,9 +789,13 @@ function updateClock(){
     osc.start();
     activeNodes.push(osc);
 
-    let on=false, hi=true;
+    let on = false;
+    let hi = true;
+
     soundTimer = setInterval(() => {
-      on=!on; hi=!hi;
+      if (!audioCtx) return;
+      on = !on;
+      hi = !hi;
       osc.frequency.setValueAtTime(hi ? 880 : 660, audioCtx.currentTime);
       gain.gain.setValueAtTime(on ? 0.35 : 0.0001, audioCtx.currentTime);
     }, 350);
@@ -786,7 +814,9 @@ function updateClock(){
     activeNodes.push(master);
 
     const playNote = (freq, durationMs) => {
+      if (!audioCtx) return;
       const t0 = audioCtx.currentTime;
+
       const osc = audioCtx.createOscillator();
       osc.type = "triangle";
       osc.frequency.setValueAtTime(freq, t0);
@@ -794,11 +824,13 @@ function updateClock(){
       const g = audioCtx.createGain();
       g.gain.setValueAtTime(0.0001, t0);
       g.gain.linearRampToValueAtTime(0.9, t0 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + durationMs/1000);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + (durationMs / 1000));
 
-      osc.connect(g); g.connect(master);
+      osc.connect(g);
+      g.connect(master);
+
       osc.start(t0);
-      osc.stop(t0 + durationMs/1000 + 0.03);
+      osc.stop(t0 + (durationMs / 1000) + 0.03);
 
       activeNodes.push(osc, g);
     };
@@ -811,15 +843,39 @@ function updateClock(){
 
   async function startAlarmSound(){
     if (alarmActive) return;
+
     alarmActive = true;
     setUI();
-    if (soundMode === "beep") await startBeep();
-    else await startLullaby();
+
+    try{
+      // try to resume/re-unlock if browser suspended context
+      if (!audioUnlocked) {
+        // this may still fail if not user-initiated, but we try
+        await ensureAudio();
+      } else {
+        await ensureAudio();
+      }
+
+      if (soundMode === "beep") await startBeep();
+      else await startLullaby();
+
+      // vibration fallback (if supported)
+      try { navigator.vibrate?.([200, 120, 200, 120, 300]); } catch {}
+    } catch (err){
+      console.error("Alarm sound failed:", err);
+      alarmActive = false;
+      setUI();
+
+      // still try vibration + notify
+      try { navigator.vibrate?.([300, 150, 300, 150, 300]); } catch {}
+      alert("Alarm triggered, but sound was blocked by the browser. Tap “Enable sound” first and keep the app open.");
+    }
   }
 
   function stopAlarmSound(){
     stopAlarmNodes();
     alarmActive = false;
+    try { navigator.vibrate?.(0); } catch {}
     setUI();
   }
 
@@ -830,7 +886,7 @@ function updateClock(){
   }
 
   function setMusicUI(){
-    const hasSrc = !!bgAudio.src;
+    const hasSrc = !!bgAudio.getAttribute?.("src") || !!bgAudio.src;
     const playing = hasSrc && !bgAudio.paused;
 
     btnMusicPlay.disabled = playing;
@@ -841,21 +897,36 @@ function updateClock(){
   }
 
   async function playMusic(){
-    await unlockAudio();
+    await unlockAudio(); // mobile unlock
     const url = musicTrackEl.value;
     if (!url) return;
 
-    if (bgAudio.src !== url) bgAudio.src = url;
+    // compare by path suffix to avoid relative/absolute mismatch
+    const cur = bgAudio.getAttribute("src") || "";
+    if (cur !== url) bgAudio.setAttribute("src", url);
+
     applyMusicSettings();
 
-    try{ await bgAudio.play(); }
-    catch{ alert("Browser blocked audio. Tap Enable sound, then Play again."); }
+    try {
+      await bgAudio.play();
+    } catch (err) {
+      console.warn("Music play blocked:", err);
+      alert("Browser blocked audio. Tap Enable sound, then Play again.");
+    }
 
     setMusicUI();
   }
 
-  function pauseMusic(){ bgAudio.pause(); setMusicUI(); }
-  function stopMusic(){ bgAudio.pause(); bgAudio.currentTime = 0; setMusicUI(); }
+  function pauseMusic(){
+    bgAudio.pause();
+    setMusicUI();
+  }
+
+  function stopMusic(){
+    bgAudio.pause();
+    try { bgAudio.currentTime = 0; } catch {}
+    setMusicUI();
+  }
 
   function saveMusic(){
     saveJSON(LS_MUSIC, {
@@ -885,7 +956,10 @@ function updateClock(){
     alarmMetaEl.textContent = meta || "";
     alarmOverlay.classList.add("show");
   }
-  function hideAlarmOverlay(){ alarmOverlay.classList.remove("show"); }
+
+  function hideAlarmOverlay(){
+    alarmOverlay.classList.remove("show");
+  }
 
   async function triggerAlarm(kind){
     const title = "⏰ Feeding Alarm";
@@ -909,6 +983,7 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     oneShotTimeoutId = null;
     nextOneShotAtMs = 0;
   }
+
   function clearRepeat(){
     if (repeatTimeoutId) clearTimeout(repeatTimeoutId);
     repeatTimeoutId = null;
@@ -917,13 +992,18 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
 
   function scheduleOneShot(){
     clearOneShot();
-    if (!running || !oneShotEnabled || !lastFeedAtMs) { setUI(); return; }
+
+    if (!running || !oneShotEnabled || !lastFeedAtMs) {
+      setUI();
+      return;
+    }
 
     const ms = Math.max(1, oneShotMins) * 60 * 1000;
     nextOneShotAtMs = Date.now() + ms;
 
     oneShotTimeoutId = setTimeout(async () => {
-      nextOneShotAtMs = 0; setUI();
+      nextOneShotAtMs = 0;
+      setUI();
       await triggerAlarm("oneShot");
     }, ms);
 
@@ -932,13 +1012,18 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
 
   function scheduleRepeat(){
     clearRepeat();
-    if (!running || !repeatEnabled) { setUI(); return; }
+
+    if (!running || !repeatEnabled) {
+      setUI();
+      return;
+    }
 
     const ms = Math.max(1, repeatMins) * 60 * 1000;
     nextRepeatAtMs = Date.now() + ms;
 
     repeatTimeoutId = setTimeout(async function fire(){
-      nextRepeatAtMs = 0; setUI();
+      nextRepeatAtMs = 0;
+      setUI();
       await triggerAlarm("repeat");
 
       if (running && repeatEnabled){
@@ -959,14 +1044,17 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   // ===== Render =====
   function renderLogs(){
     const logs = loadLogs();
+
     if (!logs.length){
       listEl.innerHTML = `<div class="muted">No entries yet.</div>`;
       return;
     }
+
     listEl.innerHTML = logs.slice().reverse().map((x) => {
       const when = formatWhen(x.atMs);
       const interval = fmtHMS(x.intervalMs || 0);
       const note = x.note ? escapeHtml(x.note) : `<span class="muted">(no note)</span>`;
+
       return `
         <div class="item">
           <div class="itemTop">
@@ -1003,8 +1091,9 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
 
     const counts = {};
     for (const x of todayLogs) counts[x.type] = (counts[x.type] || 0) + 1;
+
     const breakdown = Object.entries(counts)
-      .sort((a,b) => b[1]-a[1])
+      .sort((a,b) => b[1] - a[1])
       .map(([k,v]) => `${escapeHtml(k)}: <b>${v}</b>`)
       .join(" • ");
 
@@ -1029,6 +1118,7 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   function saveState(){
     saveJSON(LS_STATE, { running, lastFeedAtMs });
   }
+
   function loadState(){
     return loadJSON(LS_STATE, "{}");
   }
@@ -1036,6 +1126,7 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   function saveAlarm(){
     saveJSON(LS_ALARM, { oneShotMins, oneShotEnabled, repeatMins, repeatEnabled, soundMode });
   }
+
   function loadAlarm(){
     return loadJSON(LS_ALARM, "{}");
   }
@@ -1063,12 +1154,15 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
 
   // ===== Actions =====
   async function start(){
-    await unlockAudio(); // helps for later sounds
+    await unlockAudio(); // helps later alarms
     if (running) return;
+
     running = true;
     if (!lastFeedAtMs) lastFeedAtMs = Date.now();
+
     saveState();
     if (!rafId) tick();
+
     renderAll();
     rescheduleAll();
   }
@@ -1104,8 +1198,10 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     rafId = null;
     sinceTimerEl.textContent = "00:00:00";
 
-    clearOneShot(); clearRepeat();
-    stopAlarmSound(); hideAlarmOverlay();
+    clearOneShot();
+    clearRepeat();
+    stopAlarmSound();
+    hideAlarmOverlay();
 
     saveState();
     renderAll();
@@ -1123,6 +1219,35 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     renderAll();
   }
 
+  // ===== Audio lifecycle fixes (important for mobile) =====
+  async function tryResumeAudioContext(){
+    if (!audioCtx) return;
+    if (audioCtx.state === "suspended") {
+      try { await audioCtx.resume(); } catch {}
+    }
+  }
+
+  document.addEventListener("visibilitychange", async () => {
+    if (!document.hidden) {
+      await tryResumeAudioContext();
+    }
+  });
+
+  window.addEventListener("pageshow", async () => {
+    await tryResumeAudioContext();
+  });
+
+  // Auto-attempt unlock on first user interaction anywhere
+  const unlockFromGesture = async () => {
+    await unlockAudio();
+    document.removeEventListener("pointerdown", unlockFromGesture);
+    document.removeEventListener("touchstart", unlockFromGesture);
+    document.removeEventListener("keydown", unlockFromGesture);
+  };
+  document.addEventListener("pointerdown", unlockFromGesture, { passive: true });
+  document.addEventListener("touchstart", unlockFromGesture, { passive: true });
+  document.addEventListener("keydown", unlockFromGesture);
+
   // ===== Events =====
   btnStart.addEventListener("click", start);
   btnLogNote.addEventListener("click", () => logFeed("Note"));
@@ -1139,7 +1264,8 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   btnGoReminders.addEventListener("click", () => switchTab("reminders"));
   btnGoHistory.addEventListener("click", () => switchTab("history"));
 
-  btnSaveAlarm.addEventListener("click", () => {
+  btnSaveAlarm.addEventListener("click", async () => {
+    await unlockAudio(); // important for future alarms
     readAlarmSettingsFromUI();
     saveAlarm();
     rescheduleAll();
@@ -1153,6 +1279,7 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   });
 
   btnTestAlarm.addEventListener("click", async () => {
+    await unlockAudio(); // test alarm should definitely unlock first
     readAlarmSettingsFromUI();
     renderAll();
     await triggerAlarm("oneShot");
@@ -1161,21 +1288,33 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   btnStopAlarm.addEventListener("click", stopAlarmSound);
 
   btnOverlayStop.addEventListener("click", stopAlarmSound);
-  btnOverlayDismiss.addEventListener("click", () => { stopAlarmSound(); hideAlarmOverlay(); });
+  btnOverlayDismiss.addEventListener("click", () => {
+    stopAlarmSound();
+    hideAlarmOverlay();
+  });
+
   btnOverlaySnooze.addEventListener("click", () => {
-    stopAlarmSound(); hideAlarmOverlay();
+    stopAlarmSound();
+    hideAlarmOverlay();
+
     clearOneShot();
     const ms = 10 * 60 * 1000;
+
     nextOneShotAtMs = Date.now() + ms;
     oneShotTimeoutId = setTimeout(async () => {
-      nextOneShotAtMs = 0; renderAll();
+      nextOneShotAtMs = 0;
+      renderAll();
       await triggerAlarm("oneShot");
     }, ms);
+
     renderAll();
   });
 
   alarmOverlay.addEventListener("click", (e) => {
-    if (e.target === alarmOverlay){ stopAlarmSound(); hideAlarmOverlay(); }
+    if (e.target === alarmOverlay){
+      stopAlarmSound();
+      hideAlarmOverlay();
+    }
   });
 
   // Music events
@@ -1188,9 +1327,22 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   btnMusicPause.addEventListener("click", () => { pauseMusic(); saveMusic(); });
   btnMusicStop.addEventListener("click", () => { stopMusic(); saveMusic(); });
 
-  musicLoopEl.addEventListener("change", () => { applyMusicSettings(); saveMusic(); setMusicUI(); });
-  musicVolEl.addEventListener("input", () => { applyMusicSettings(); saveMusic(); });
-  musicTrackEl.addEventListener("change", async () => { stopMusic(); await playMusic(); saveMusic(); });
+  musicLoopEl.addEventListener("change", () => {
+    applyMusicSettings();
+    saveMusic();
+    setMusicUI();
+  });
+
+  musicVolEl.addEventListener("input", () => {
+    applyMusicSettings();
+    saveMusic();
+  });
+
+  musicTrackEl.addEventListener("change", async () => {
+    stopMusic();
+    await playMusic();
+    saveMusic();
+  });
 
   bgAudio.addEventListener("play", setMusicUI);
   bgAudio.addEventListener("pause", setMusicUI);
@@ -1213,7 +1365,8 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   renderAll();
 
   // Clock + timer
-  updateClock(); setInterval(updateClock, 1000);
+  updateClock();
+  setInterval(updateClock, 1000);
 
   if (running){
     if (!lastFeedAtMs) lastFeedAtMs = Date.now();
@@ -1222,16 +1375,17 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     rescheduleAll();
   } else {
     sinceTimerEl.textContent = "00:00:00";
-    clearOneShot(); clearRepeat();
+    clearOneShot();
+    clearRepeat();
   }
 
   // ===== Service worker =====
   if ("serviceWorker" in navigator){
     window.addEventListener("load", async () => {
-      try{
+      try {
         await navigator.serviceWorker.register("./service-worker.js");
         installState.textContent = "Offline-ready";
-      }catch{
+      } catch {
         installState.textContent = "SW failed";
       }
     });

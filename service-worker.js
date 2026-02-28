@@ -1,17 +1,10 @@
-const CACHE_NAME = "baby-feeding-monitor-v1.0.0";
+const CACHE_NAME = "baby-feeding-monitor-v1.0.1";
 
 // Files to cache for offline use
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.json",
-
-  // Music files (optional but recommended)
-  "./assets/music/lullaby.mp3",
-  "./assets/music/lullaby2.mp3",
-  "./assets/music/lullaby3.mp3",
-
-  // Icons (make sure these exist)
   "./assets/icons/icon-192.png",
   "./assets/icons/icon-512.png"
 ];
@@ -20,12 +13,10 @@ const APP_SHELL = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
-      // Cache one by one so one missing file won't fail the whole install
       for (const url of APP_SHELL) {
         try {
           await cache.add(url);
         } catch (err) {
-          // Ignore missing optional files, but log them
           console.warn("[SW] Failed to cache:", url, err);
         }
       }
@@ -49,20 +40,20 @@ self.addEventListener("activate", (event) => {
 });
 
 // Fetch strategy:
-// - For same-origin GET requests: cache-first, then network
-// - For navigation requests: try network, fallback to cached index.html
+// - same-origin GET requests only
+// - navigation: network-first, fallback to cache
+// - static assets: cache-first, then network
 self.addEventListener("fetch", (event) => {
   const req = event.request;
 
-  // Only handle GET
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
 
-  // Ignore cross-origin requests (firebase/CDN/etc.) unless you want to handle them
+  // Ignore cross-origin requests
   if (url.origin !== self.location.origin) return;
 
-  // HTML navigation: network-first (so updates are fresh), fallback to cache
+  // HTML navigation
   if (req.mode === "navigate") {
     event.respondWith(
       fetch(req)
@@ -79,13 +70,12 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static assets: cache-first
+  // Static assets
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
 
       return fetch(req).then((res) => {
-        // Cache successful same-origin responses
         if (res && res.status === 200) {
           const copy = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));

@@ -252,7 +252,6 @@
 
     .hide{ display:none !important; }
 
-    /* Mobile alarm visual fallback */
     body.alarm-flash{
       animation: alarmFlash 0.8s ease-in-out infinite;
     }
@@ -262,7 +261,6 @@
       100%{ background:#fff4f7; }
     }
 
-    /* Small screens polish */
     @media (max-width: 480px){
       .wrap{ padding: 12px; }
       .topbar{ align-items:flex-start; }
@@ -464,10 +462,19 @@
 
         <div class="sectionTitle">Track</div>
         <select id="musicTrack">
-          <option value="./assets/music/lullaby.mp3">Lullaby 1</option>
-          <option value="./assets/music/lullaby2.mp3">Lullaby 2</option>
-          <option value="./assets/music/lullaby3.mp3">Lullaby 3</option>
+          <option value="https://res.cloudinary.com/dbelkc1um/video/upload/v1772289883/lullaby1_ilhyae.mp3">Baby Music 1</option>
+          <option value="https://res.cloudinary.com/dbelkc1um/video/upload/v1772290035/lullaby2_sl4gyk.mp3">Baby Music 2</option>
+          <option value="https://example.com/audio/lullaby3.mp3">Baby Music 3</option>
         </select>
+
+        <div style="height:12px"></div>
+
+        <div class="sectionTitle">Custom music URL</div>
+        <input id="customMusicUrl" type="url" placeholder="Paste direct MP3 link here">
+        <div class="btnRow" style="grid-template-columns: 1fr;">
+          <button class="btnPrimary" id="btnUseCustomUrl">Use custom link</button>
+        </div>
+        <div class="muted">Use a direct audio file link like .mp3, .wav, or .ogg. YouTube and normal Google Drive page links usually will not work.</div>
 
         <div style="height:10px"></div>
 
@@ -525,12 +532,10 @@
 
 <script>
 (() => {
-  // ===== PWA badge helper =====
   const installState = document.getElementById("installState");
   window.addEventListener("beforeinstallprompt", () => { installState.textContent = "Installable"; });
   window.addEventListener("appinstalled", () => { installState.textContent = "Installed"; });
 
-  // ===== Tabs =====
   const tabBtns = Array.from(document.querySelectorAll(".tabbtn"));
   const tabs = {
     feed: document.getElementById("tab-feed"),
@@ -552,7 +557,6 @@
   }
   tabBtns.forEach(b => b.addEventListener("click", () => switchTab(b.dataset.tab)));
 
-  // ===== DOM =====
   const $ = (id) => document.getElementById(id);
 
   const clockTextEl = $("clockText");
@@ -585,7 +589,6 @@
   const btnGoReminders = $("btnGoReminders");
   const btnGoHistory = $("btnGoHistory");
 
-  // Music UI
   const musicStateEl = $("musicState");
   const btnEnableSound = $("btnEnableSound");
   const btnMusicPlay = $("btnMusicPlay");
@@ -594,9 +597,10 @@
   const musicTrackEl = $("musicTrack");
   const musicLoopEl = $("musicLoop");
   const musicVolEl = $("musicVol");
+  const customMusicUrlEl = $("customMusicUrl");
+  const btnUseCustomUrl = $("btnUseCustomUrl");
   const soundUnlockStatusEl = $("soundUnlockStatus");
 
-  // Alarm UI
   const notifPill = $("notifPill");
   const oneShotMinsEl = $("oneShotMins");
   const oneShotEnabledEl = $("oneShotEnabled");
@@ -613,7 +617,6 @@
   const nextOneShotTextEl = $("nextOneShotText");
   const nextRepeatTextEl = $("nextRepeatText");
 
-  // Overlay
   const alarmOverlay = $("alarmOverlay");
   const alarmTitleEl = $("alarmTitle");
   const alarmMsgEl = $("alarmMsg");
@@ -622,42 +625,36 @@
   const btnOverlaySnooze = $("btnOverlaySnooze");
   const btnOverlayDismiss = $("btnOverlayDismiss");
 
-  // ===== Storage keys =====
   const LS_LOGS = "bf_logs_ui_v1";
   const LS_STATE = "bf_state_ui_v1";
   const LS_ALARM = "bf_alarm_ui_v1";
-  const LS_MUSIC = "bf_music_ui_v1";
+  const LS_MUSIC = "bf_music_ui_v2";
 
-  // ===== State =====
   let running = false;
   let lastFeedAtMs = 0;
   let rafId = null;
 
-  // Alarm settings
   let oneShotMins = 120;
   let oneShotEnabled = true;
   let repeatMins = 180;
   let repeatEnabled = false;
   let soundMode = "lullaby";
 
-  // Alarm schedule
   let oneShotTimeoutId = null;
   let repeatTimeoutId = null;
   let nextOneShotAtMs = 0;
   let nextRepeatAtMs = 0;
 
-  // Alarm sound (WebAudio)
   let audioCtx = null;
   let alarmActive = false;
   let activeNodes = [];
   let soundTimer = null;
   let audioUnlocked = false;
 
-  // Background music (HTMLAudio)
   const bgAudio = new Audio();
   bgAudio.preload = "auto";
+  bgAudio.crossOrigin = "anonymous";
 
-  // ===== Helpers =====
   const pad = (n) => String(n).padStart(2, "0");
 
   const fmtHMS = (ms) => {
@@ -748,7 +745,6 @@
     rafId = requestAnimationFrame(tick);
   }
 
-  // ===== Notifications =====
   function updateNotifPill(){
     const supportsNotification = ("Notification" in window);
     const inSecureContext = window.isSecureContext;
@@ -763,7 +759,6 @@
       return;
     }
 
-    // iOS/Safari often needs Add to Home Screen for web push support
     if (isMobileLike() && !standalone && /iPhone|iPad|iPod/i.test(navigator.userAgent || "")) {
       notifPill.textContent = `Notif: ${Notification.permission} (Open as app)`;
       return;
@@ -810,7 +805,6 @@
     }
   }
 
-  // ===== WebAudio alarm sound =====
   async function ensureAudio(){
     if (!audioCtx) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -828,7 +822,6 @@
     try{
       await ensureAudio();
 
-      // Tiny ping to unlock audio on mobile
       const osc = audioCtx.createOscillator();
       const g = audioCtx.createGain();
 
@@ -945,7 +938,6 @@
     document.body.classList.add("alarm-flash");
     setUI();
 
-    // Vibration fallback always (if supported)
     try { navigator.vibrate?.([250, 120, 250, 120, 400]); } catch {}
 
     try{
@@ -955,12 +947,8 @@
       else await startLullaby();
     } catch (err){
       console.error("Alarm sound failed:", err);
-
-      // Keep visual/vibration fallback active even if audio fails
       alarmActive = true;
       setUI();
-
-      // No alert spam if alarm fired in background repeatedly.
       console.warn("Audio blocked; visual/vibration fallback still active.");
     }
   }
@@ -973,7 +961,6 @@
     setUI();
   }
 
-  // ===== Background music =====
   function applyMusicSettings(){
     bgAudio.loop = (musicLoopEl.value === "on");
     bgAudio.volume = Number(musicVolEl.value || 0.25);
@@ -992,12 +979,12 @@
   }
 
   async function playMusic(){
-    await unlockAudio(); // mobile unlock
-    const url = musicTrackEl.value;
+    await unlockAudio();
+    const url = (customMusicUrlEl.value || musicTrackEl.value || "").trim();
     if (!url) return;
 
-    const curAttr = bgAudio.getAttribute ? (bgAudio.getAttribute("src") || "") : "";
-    if (curAttr !== url) {
+    const currentSrc = bgAudio.getAttribute("src") || "";
+    if (currentSrc !== url) {
       bgAudio.setAttribute("src", url);
       bgAudio.load();
     }
@@ -1008,7 +995,7 @@
       await bgAudio.play();
     } catch (err) {
       console.warn("Music play blocked:", err);
-      alert("Browser blocked audio. Tap Enable sound, then Play again.");
+      alert("Browser blocked audio or the link is invalid. Tap Enable sound, then Play again.");
     }
 
     setMusicUI();
@@ -1029,7 +1016,8 @@
     saveJSON(LS_MUSIC, {
       track: musicTrackEl.value,
       loop: musicLoopEl.value,
-      vol: Number(musicVolEl.value || 0.25)
+      vol: Number(musicVolEl.value || 0.25),
+      customUrl: customMusicUrlEl.value || ""
     });
   }
 
@@ -1038,15 +1026,14 @@
     if (m.track) musicTrackEl.value = m.track;
     if (m.loop) musicLoopEl.value = m.loop;
     if (typeof m.vol === "number") musicVolEl.value = String(m.vol);
+    if (m.customUrl) customMusicUrlEl.value = m.customUrl;
     applyMusicSettings();
     setMusicUI();
   }
 
-  // ===== Logs =====
   const loadLogs = () => loadJSON(LS_LOGS, "[]");
   const saveLogs = (logs) => saveJSON(LS_LOGS, logs);
 
-  // ===== Overlay =====
   function showAlarmOverlay(title, msg, meta){
     alarmTitleEl.textContent = title || "⏰ Alarm";
     alarmMsgEl.textContent = msg || "Time to check feeding.";
@@ -1074,7 +1061,6 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     tryNotify(title, msg);
   }
 
-  // ===== Scheduling =====
   function clearOneShot(){
     if (oneShotTimeoutId) clearTimeout(oneShotTimeoutId);
     oneShotTimeoutId = null;
@@ -1138,7 +1124,6 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     scheduleRepeat();
   }
 
-  // ===== Render =====
   function renderLogs(){
     const logs = loadLogs();
 
@@ -1211,7 +1196,6 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     renderLogs();
   }
 
-  // ===== Save/restore state =====
   function saveState(){
     saveJSON(LS_STATE, { running, lastFeedAtMs });
   }
@@ -1249,9 +1233,8 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     soundMode = (soundModeEl.value === "beep") ? "beep" : "lullaby";
   }
 
-  // ===== Actions =====
   async function start(){
-    await unlockAudio(); // helps future alarms
+    await unlockAudio();
     if (running) return;
 
     running = true;
@@ -1316,7 +1299,6 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     renderAll();
   }
 
-  // ===== Audio lifecycle fixes (important for mobile) =====
   async function tryResumeAudioContext(){
     if (!audioCtx) return;
     if (audioCtx.state === "suspended") {
@@ -1334,7 +1316,6 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     await tryResumeAudioContext();
   });
 
-  // Auto-attempt unlock on first user interaction anywhere
   const unlockFromGesture = async () => {
     await unlockAudio();
     document.removeEventListener("pointerdown", unlockFromGesture);
@@ -1345,7 +1326,6 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   document.addEventListener("touchstart", unlockFromGesture, { passive: true });
   document.addEventListener("keydown", unlockFromGesture);
 
-  // ===== Events =====
   btnStart.addEventListener("click", start);
   btnLogNote.addEventListener("click", () => logFeed("Note"));
   btnReset.addEventListener("click", reset);
@@ -1362,7 +1342,7 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   btnGoHistory.addEventListener("click", () => switchTab("history"));
 
   btnSaveAlarm.addEventListener("click", async () => {
-    await unlockAudio(); // good time to unlock on mobile
+    await unlockAudio();
     readAlarmSettingsFromUI();
     saveAlarm();
     rescheduleAll();
@@ -1376,7 +1356,7 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   });
 
   btnTestAlarm.addEventListener("click", async () => {
-    await unlockAudio(); // test should unlock first
+    await unlockAudio();
     readAlarmSettingsFromUI();
     renderAll();
     await triggerAlarm("oneShot");
@@ -1414,7 +1394,6 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     }
   });
 
-  // Music events
   btnEnableSound.addEventListener("click", async () => {
     const ok = await unlockAudio();
     alert(ok ? "Sound enabled ✅" : "Could not enable sound ❌");
@@ -1423,6 +1402,25 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   btnMusicPlay.addEventListener("click", async () => { await playMusic(); saveMusic(); });
   btnMusicPause.addEventListener("click", () => { pauseMusic(); saveMusic(); });
   btnMusicStop.addEventListener("click", () => { stopMusic(); saveMusic(); });
+
+  btnUseCustomUrl.addEventListener("click", async () => {
+    const url = (customMusicUrlEl.value || "").trim();
+    if (!url) {
+      alert("Please paste a music link first.");
+      return;
+    }
+
+    stopMusic();
+    bgAudio.setAttribute("src", url);
+    bgAudio.load();
+
+    try {
+      await playMusic();
+      saveMusic();
+    } catch {
+      alert("Could not play the custom link.");
+    }
+  });
 
   musicLoopEl.addEventListener("change", () => {
     applyMusicSettings();
@@ -1436,6 +1434,7 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   });
 
   musicTrackEl.addEventListener("change", async () => {
+    customMusicUrlEl.value = "";
     stopMusic();
     await playMusic();
     saveMusic();
@@ -1449,7 +1448,6 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     setMusicUI();
   });
 
-  // ===== Restore =====
   const st = loadState();
   running = !!st.running;
   lastFeedAtMs = Number(st.lastFeedAtMs || 0);
@@ -1465,7 +1463,6 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
   restoreMusic();
   renderAll();
 
-  // Clock + timer
   updateClock();
   setInterval(updateClock, 1000);
 
@@ -1480,7 +1477,6 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     clearRepeat();
   }
 
-  // ===== Service worker =====
   if ("serviceWorker" in navigator){
     window.addEventListener("load", async () => {
       try {
@@ -1492,7 +1488,6 @@ Since last feed: ${fmtHMS(getSinceMs())}`;
     });
   }
 
-  // Initial notification pill refresh after load
   updateNotifPill();
 })();
 </script>
